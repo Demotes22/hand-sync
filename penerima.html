@@ -1,75 +1,118 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-    <title>Penerima - Ultra Stable</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penerima: Auto-Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #000; color: white; text-align: center; margin: 0; overflow: hidden; font-family: sans-serif; }
-        video, canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); }
-        canvas { z-index: 2; pointer-events: none; }
-        #ui { position: relative; z-index: 10; margin-top: 50px; background: rgba(0,0,0,0.7); padding: 20px; display: inline-block; border-radius: 15px; }
-        #start-btn { padding: 20px; font-size: 1.2em; background: #28a745; color: white; border: none; border-radius: 10px; cursor: pointer; }
-        #view { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #000; z-index: 100; align-items: center; justify-content: center; }
-        img, video { max-width: 90%; max-height: 80%; border: 2px solid #00ff00; }
+        body { font-family: sans-serif; background: #000; color: white; margin: 0; overflow: hidden; }
+        #output_canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.3; z-index: 1; transform: scaleX(-1); }
+        #preview-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; background: rgba(0,0,0,0.9); z-index: 100; 
+            flex-direction: column; justify-content: center; align-items: center; 
+        }
+        #media-render { max-width: 95%; max-height: 80%; border: 3px solid #00ff00; border-radius: 10px; }
+        .ui { position: relative; z-index: 10; padding-top: 50px; text-align: center; }
+        .btn-close { margin-top: 20px; padding: 12px 25px; background: #ff4444; color: white; border: none; border-radius: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <video id="v" autoplay playsinline></video>
-    <canvas id="c"></canvas>
 
-    <div id="ui">
-        <button id="start-btn" onclick="mulai()">KLIK UNTUK MULAI</button>
-        <p id="msg">Tunggu Aktivasi...</p>
+    <canvas id="output_canvas"></canvas>
+    <video id="input_video" style="display:none" playsinline autoplay></video>
+
+    <div id="preview-overlay">
+        <div id="media-box"></div>
+        <button class="btn-close" onclick="tutupPreview()">TUTUP & TERIMA LAGI</button>
     </div>
 
-    <div id="view" onclick="this.style.display='none'">
-        <div id="box"></div>
+    <div class="ui">
+        <div style="background:rgba(0,0,0,0.6); display:inline-block; padding:15px; border-radius:10px;">
+            ID HP: <b id="my-id" style="color:#58a6ff;">...</b><br>
+            <span id="status">Tunggu...</span>
+        </div>
     </div>
 
     <script>
-        const msg = document.getElementById('msg');
-        const v = document.getElementById('v');
-        const c = document.getElementById('c');
-        const ctx = c.getContext('2d');
-        let peer = new Peer('hp-unik-123'), pending = null;
+        const status = document.getElementById('status');
+        const overlay = document.getElementById('preview-overlay');
+        const mediaBox = document.getElementById('media-box');
+        let peer = new Peer();
+        let pending = null;
+
+        peer.on('open', id => document.getElementById('my-id').innerText = id);
 
         peer.on('connection', c => {
-            msg.innerText = "Terhubung!";
-            c.on('data', d => { 
-                pending = d; 
-                msg.innerText = "ADA FILE! KEPAL TANGAN!";
-                msg.style.color = "#0ff";
+            c.on('data', data => {
+                pending = data;
+                status.innerText = "ADA FILE! KEPAL TANGAN UNTUK BUKA!";
+                status.style.color = "#00ff00";
             });
         });
 
+        function tampilkanFile(data) {
+            const blob = new Blob([data.file], { type: data.type || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            mediaBox.innerHTML = '';
+            
+            if (data.type && data.type.startsWith('image/')) {
+                const img = new Image();
+                img.src = url;
+                img.id = 'media-render';
+                mediaBox.appendChild(img);
+            } else if (data.type && data.type.startsWith('video/')) {
+                const vid = document.createElement('video');
+                vid.src = url;
+                vid.id = 'media-render';
+                vid.autoplay = true;
+                vid.controls = true;
+                mediaBox.appendChild(vid);
+            } else {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = data.name;
+                a.click();
+                alert("File terdownload: " + data.name);
+                return;
+            }
+            overlay.style.display = 'flex';
+        }
+
+        function tutupPreview() {
+            overlay.style.display = 'none';
+            pending = null;
+            status.innerText = "Siap menerima lagi...";
+            status.style.color = "white";
+        }
+
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.6});
+        
         hands.onResults(res => {
-            c.width = window.innerWidth; c.height = window.innerHeight;
-            ctx.clearRect(0, 0, c.width, c.height);
-            if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
-                // Gambar garis deteksi di HP
-                for (const lm of res.multiHandLandmarks) {
-                    const isKepal = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                    if (isKepal && pending) {
-                        const url = URL.createObjectURL(new Blob([pending.file], {type: pending.type}));
-                        const box = document.getElementById('box');
-                        box.innerHTML = pending.type.startsWith('image') ? `<img src="${url}">` : `<video src="${url}" autoplay controls>`;
-                        document.getElementById('view').style.display = 'flex';
-                        pending = null;
-                        msg.innerText = "BERHASIL!";
-                    }
+            const canvas = document.getElementById('output_canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            ctx.drawImage(res.image, 0, 0, canvas.width, canvas.height);
+            
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                const lm = res.multiHandLandmarks[0];
+                // Deteksi Kepalan Tangan
+                const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
+                if (isFist && pending) {
+                    tampilkanFile(pending);
                 }
             }
         });
 
-        function mulai() {
-            document.getElementById('start-btn').style.display = 'none';
-            const cam = new Camera(v, { onFrame: async () => await hands.send({image: v}) });
-            cam.start();
-            msg.innerText = "Mencari Tangan...";
-        }
+        new Camera(document.getElementById('input_video'), {
+            onFrame: async () => { await hands.send({image: document.getElementById('input_video')}); },
+            width: 480, height: 640
+        }).start();
     </script>
 </body>
 </html>
