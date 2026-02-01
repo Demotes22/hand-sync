@@ -2,95 +2,71 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Hand-Sync: PENGIRIM (Laptop)</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <title>Hand-Sync: PENGIRIM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; text-align: center; margin: 0; }
-        .container { padding: 20px; }
-        #webcam { transform: scaleX(-1); border-radius: 15px; border: 4px solid #333; background: #000; }
-        .status-bar { margin: 15px auto; width: 80%; padding: 10px; border-radius: 8px; background: #252525; }
-        #progress-bg { width: 100%; height: 10px; background: #333; border-radius: 5px; margin-top: 10px; }
-        #progress-fill { width: 0%; height: 100%; background: #00ff00; transition: 0.1s; }
-        .highlight { color: #00ff00; font-weight: bold; }
+        body { font-family: sans-serif; background: #1a1a1a; color: white; text-align: center; }
+        #webcam { transform: scaleX(-1); border-radius: 10px; border: 3px solid #444; }
+        .box { background: #252525; padding: 20px; border-radius: 10px; display: inline-block; margin: 10px; }
+        #status { font-weight: bold; color: #ffca28; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>🚀 Mode Pengirim (Laptop)</h2>
-        <div class="status-bar">
-            <input type="text" id="targetId" placeholder="Masukkan ID HP Penerima">
-            <button onclick="hubungkan()">Hubungkan WebRTC</button>
-            <br><br>
-            <input type="file" id="fileInput">
-            <p id="info-status">Status: Pilih file & masukkan ID HP</p>
-        </div>
-
-        <div style="position: relative; display: inline-block;">
-            <video id="webcam" width="480" height="360" autoplay playsinline></video>
-        </div>
-        
-        <div id="progress-bg"><div id="progress-fill"></div></div>
-        <p id="hand-pos">Posisi Tangan: 0%</p>
+    <h2>🚀 Mode Pengirim (Laptop)</h2>
+    <div class="box">
+        <input type="text" id="targetId" placeholder="ID HP Penerima">
+        <button onclick="hubungkan()">Hubungkan</button><br><br>
+        <input type="file" id="fileInput">
+        <p id="status">Status: Menunggu ID...</p>
     </div>
+    <br>
+    <video id="webcam" width="480" height="360" autoplay playsinline></video>
 
     <script>
+        const status = document.getElementById('status');
         const fileInput = document.getElementById('fileInput');
-        const infoStatus = document.getElementById('info-status');
-        const progressFill = document.getElementById('progress-fill');
-        const handPosText = document.getElementById('hand-pos');
-        
         let peer = new Peer();
         let conn;
         let isHolding = false;
 
-        // Efek Suara Wosh
         function playWoosh() {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = new AudioContext();
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.type = 'white-noise';
-            const filter = ctx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.exponentialRampToValueAtTime(10, ctx.currentTime + 0.5);
-            osc.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
-            gain.gain.setValueAtTime(0.5, ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            osc.connect(gain); gain.connect(ctx.destination);
             osc.start(); osc.stop(ctx.currentTime + 0.5);
         }
 
         function hubungkan() {
             const id = document.getElementById('targetId').value;
             conn = peer.connect(id, { reliable: true });
-            conn.on('open', () => {
-                infoStatus.innerText = "Terhubung! Genggam file di KIRI lalu geser ke KANAN.";
-                infoStatus.classList.add('highlight');
-            });
+            conn.on('open', () => { status.innerText = "TERHUBUNG! Siap Melempar."; status.style.color = "#00ff00"; });
         }
 
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.7 });
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
         hands.onResults(results => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
-                const xPos = 1 - lm[0].x; // Normalisasi mirror
+                const xPos = 1 - lm[0].x; 
                 const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-
-                progressFill.style.width = (xPos * 100) + "%";
-                handPosText.innerText = `Posisi: ${Math.round(xPos * 100)}% | Genggam: ${isFist ? 'YA' : 'TIDAK'}`;
 
                 if (isFist && xPos < 0.3) {
                     isHolding = true;
-                    infoStatus.innerText = "File DIGENGGAM! Ayo lempar ke kanan...";
+                    status.innerText = "DIGENGGAM! Geser ke kanan...";
                 }
-
-                if (isHolding && isFist && xPos > 0.85) {
+                if (isHolding && isFist && xPos > 0.8) {
                     if (conn && conn.open && fileInput.files[0]) {
                         playWoosh();
-                        const file = fileInput.files[0];
-                        conn.send({ file: file, name: file.name, type: file.type });
-                        infoStatus.innerText = "WOSHH! File terlempar ke HP!";
+                        conn.send({ file: fileInput.files[0], name: fileInput.files[0].name });
+                        status.innerText = "WOSHH! TERKIRIM!";
                         isHolding = false;
                     }
                 }
