@@ -1,44 +1,37 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Penerima Awal (Stabil)</title>
+    <title>Penerima - Gesture Sync</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; color: white; text-align: center; margin: 0; overflow: hidden; }
-        video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.5; }
-        #preview { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #000; z-index: 100; align-items: center; justify-content: center; flex-direction: column; }
-        #media-render { max-width: 90%; max-height: 80%; border: 2px solid #00ff00; }
-        .ui { position: relative; z-index: 10; padding-top: 50px; }
+        video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.4; }
+        #view { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #000; z-index: 100; align-items: center; justify-content: center; }
+        .ui { position: relative; z-index: 10; padding-top: 60px; }
+        #media-render { max-width: 90%; border: 2px solid #00ff00; }
     </style>
 </head>
 <body>
     <video id="v" autoplay playsinline></video>
-    
-    <div id="preview" onclick="this.style.display='none'">
-        <div id="box"></div>
-        <p>Klik untuk tutup</p>
-    </div>
-
+    <div id="view" onclick="this.style.display='none'"><div id="box"></div></div>
     <div class="ui">
-        ID HP: <b id="my-id" style="color:#58a6ff;">...</b><br>
-        <p id="st">Menunggu koneksi...</p>
+        ID HP: <h2 id="my-id">...</h2>
+        <p id="st">Menunggu lemparan file...</p>
     </div>
 
     <script>
         const st = document.getElementById('st');
-        const box = document.getElementById('box');
-        const preview = document.getElementById('preview');
+        const view = document.getElementById('view');
         let peer = new Peer(), pending = null;
 
         peer.on('open', id => document.getElementById('my-id').innerText = id);
-        
         peer.on('connection', c => {
-            st.innerText = "TERHUBUNG!";
-            c.on('data', data => {
-                pending = data;
-                st.innerText = "ADA FILE! KEPAL TANGAN!";
+            c.on('data', d => {
+                pending = d;
+                st.innerText = "📩 ADA FILE! KEPAL TANGAN!";
+                st.style.color = "#00ff00";
             });
         });
 
@@ -46,23 +39,17 @@
         hands.onResults(res => {
             if (res.multiHandLandmarks && res.multiHandLandmarks[0] && pending) {
                 const lm = res.multiHandLandmarks[0];
-                const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                
-                if (isFist) {
+                if (lm[8].y > lm[6].y && lm[12].y > lm[10].y) {
                     const url = URL.createObjectURL(new Blob([pending.file], { type: pending.type }));
-                    box.innerHTML = pending.type.startsWith('image') ? 
-                        `<img src="${url}" id="media-render">` : 
-                        `<video src="${url}" id="media-render" autoplay controls>`;
-                    preview.style.display = 'flex';
+                    document.getElementById('box').innerHTML = pending.type.startsWith('image') ? 
+                        `<img src="${url}" id="media-render">` : `<video src="${url}" id="media-render" autoplay controls>`;
+                    view.style.display = 'flex';
                     pending = null;
-                    st.innerText = "Berhasil dibuka!";
                 }
             }
         });
 
-        new Camera(document.getElementById('v'), { 
-            onFrame: async () => await hands.send({image: document.getElementById('v')}) 
-        }).start();
+        new Camera(document.getElementById('v'), { onFrame: async () => await hands.send({image: document.getElementById('v')}) }).start();
     </script>
 </body>
 </html>
