@@ -1,69 +1,59 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Hand-Sync: PENERIMA</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <title>Penerima - Hand Capture</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0d1117; color: white; text-align: center; }
-        #webcam { position: fixed; top: 0; left: 0; min-width: 100%; min-height: 100%; opacity: 0.2; z-index: -1; transform: scaleX(-1); }
-        .badge { background: #161b22; padding: 20px; border-radius: 10px; margin-top: 50px; display: inline-block; border: 1px solid #333; }
-        .circle { width: 150px; height: 150px; border: 5px dashed #58a6ff; border-radius: 50%; margin: 30px auto; display: flex; align-items: center; justify-content: center; font-size: 3em; }
-        .glow { border-color: #00ff00; box-shadow: 0 0 20px #00ff00; }
+        body { background: #0d1117; color: white; text-align: center; font-family: sans-serif; }
+        #canvas_output { width: 100%; border-radius: 20px; }
+        .badge { background: #161b22; padding: 15px; border-radius: 10px; margin: 20px; display: inline-block; }
     </style>
 </head>
 <body>
-    <video id="webcam" playsinline autoplay></video>
-    <div class="badge">
-        ID HP ANDA:<br>
-        <span id="my-id" style="font-size: 1.5em; color: #58a6ff;">Mencari...</span>
-    </div>
-    <p id="msg" style="font-weight: bold; margin-top: 20px;">Menunggu lemparan...</p>
-    <div class="circle" id="circle">✋</div>
+    <div class="badge">ID HP: <b id="my-id">...</b></div>
+    <p id="msg">Menunggu lemparan...</p>
+    <canvas id="canvas_output" width="480" height="640"></canvas>
+    <video id="input_video" style="display:none"></video>
 
     <script>
-        const msg = document.getElementById('msg');
-        const circle = document.getElementById('circle');
+        const log = document.getElementById('msg');
         let peer = new Peer();
-        let pendingFile = null;
+        let pending = null;
 
         peer.on('open', id => document.getElementById('my-id').innerText = id);
-        peer.on('connection', (conn) => {
-            conn.on('data', (data) => {
-                pendingFile = data;
-                msg.innerText = "FILE DATANG! TANGKAP!";
-                circle.classList.add('glow');
-                circle.innerText = "✊";
-            });
+        peer.on('connection', c => {
+            log.innerText = "Terhubung!";
+            c.on('data', data => { pending = data; log.innerText = "ADA FILE! TANGKAP!"; });
         });
 
-        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
-        hands.onResults(results => {
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.5 });
+
+        hands.onResults((results) => {
+            const ctx = document.getElementById('canvas_output').getContext('2d');
+            ctx.clearRect(0,0,480,640);
+            ctx.drawImage(results.image, 0, 0, 480, 640);
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
                 const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                if (isFist && pendingFile) {
-                    const blob = new Blob([pendingFile.file]);
+                if (isFist && pending) {
                     const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = pendingFile.name;
+                    a.href = URL.createObjectURL(new Blob([pending.file]));
+                    a.download = pending.name;
                     a.click();
-                    pendingFile = null;
-                    circle.classList.remove('glow');
-                    circle.innerText = "✅";
-                    msg.innerText = "BERHASIL DITANGKAP!";
+                    pending = null;
+                    log.innerText = "BERHASIL DITANGKAP!";
                 }
             }
         });
 
-        const camera = new Camera(document.getElementById('webcam'), {
-            onFrame: async () => { await hands.send({image: document.getElementById('webcam')}); },
-            width: 640, height: 480
-        });
-        camera.start();
+        new Camera(document.getElementById('input_video'), {
+            onFrame: async () => { await hands.send({image: document.getElementById('input_video')}); },
+            width: 480, height: 640
+        }).start();
     </script>
 </body>
 </html>
