@@ -1,36 +1,40 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pengirim - Hand Tracker</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <title>Hand-Sync PENGIRIM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #1a1a1a; color: white; text-align: center; font-family: sans-serif; }
-        #canvas_output { position: absolute; left: 50%; transform: translateX(-50%); border: 2px solid #58a6ff; border-radius: 10px; }
-        .controls { margin: 20px; padding: 15px; background: #333; display: inline-block; border-radius: 10px; }
-        #log { color: #00ff00; margin-top: 10px; }
+        body { background: #121212; color: white; text-align: center; font-family: sans-serif; }
+        .box { background: #1e1e1e; padding: 15px; border-radius: 10px; display: inline-block; margin: 10px; border: 1px solid #333; }
+        #output_canvas { border: 2px solid #58a6ff; border-radius: 10px; max-width: 100%; height: auto; background: #000; }
+        #status-msg { color: #00ff00; font-weight: bold; margin: 10px; min-height: 20px; }
+        button { padding: 10px; cursor: pointer; background: #58a6ff; color: white; border: none; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <h2>💻 Mode Pengirim</h2>
-    <div class="controls">
+    <h2>💻 Mode Pengirim (Laptop)</h2>
+    
+    <div class="box">
         <input type="text" id="targetId" placeholder="ID HP Penerima">
-        <button onclick="hubungkan()">1. Hubungkan</button><br><br>
+        <button onclick="hubungkan()">Hubungkan ke HP</button><br><br>
         <input type="file" id="fileInput">
-        <div id="log">Status: Tunggu AI memuat...</div>
+        <div id="status-msg">Tunggu... Sedang memuat AI</div>
     </div>
-    <div style="position: relative; height: 360px;">
+
+    <div style="position: relative;">
+        <canvas id="output_canvas" width="640" height="480"></canvas>
         <video id="input_video" style="display:none"></video>
-        <canvas id="canvas_output" width="480" height="360"></canvas>
     </div>
 
     <script>
         const videoElement = document.getElementById('input_video');
-        const canvasElement = document.getElementById('canvas_output');
+        const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
-        const log = document.getElementById('log');
+        const statusMsg = document.getElementById('status-msg');
+        
         let isHolding = false;
         let conn;
         let peer = new Peer();
@@ -38,11 +42,20 @@
         function hubungkan() {
             const id = document.getElementById('targetId').value;
             conn = peer.connect(id);
-            conn.on('open', () => log.innerText = "Terhubung! Genggam di Kiri, Geser ke Kanan.");
+            conn.on('open', () => { statusMsg.innerText = "TERHUBUNG! Genggam di KANAN layar, geser ke KIRI."; });
         }
 
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        // Inisialisasi AI Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
 
         hands.onResults((results) => {
             canvasCtx.save();
@@ -50,22 +63,30 @@
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
             
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                log.innerText = "Tangan Terdeteksi!";
+                statusMsg.innerText = "AI AKTIF: Tangan Terdeteksi";
                 for (const landmarks of results.multiHandLandmarks) {
+                    // Gambar Kerangka Tangan (Garis Hijau)
                     drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
                     drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
                     
-                    const xPos = landmarks[0].x; // Koordinat tangan
+                    const xPos = landmarks[0].x; 
+                    // Cek Mengepal: Jarak ujung jari telunjuk ke pangkalnya
                     const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
 
-                    if (isFist && xPos > 0.7) { // Sisi kiri (karena mirror)
+                    // LOGIKA: Di monitor, KANAN adalah koordinat X Kecil (< 0.3) karena mirror
+                    if (isFist && xPos > 0.7) { 
                         isHolding = true;
-                        log.innerText = "FILE DIGENGGAM!";
+                        statusMsg.innerText = "✊ FILE DIGENGGAM!";
+                        statusMsg.style.color = "yellow";
                     }
-                    if (isHolding && isFist && xPos < 0.2) { // Sisi kanan
+                    if (isHolding && isFist && xPos < 0.2) { 
                         if (conn && conn.open && document.getElementById('fileInput').files[0]) {
-                            conn.send({ file: document.getElementById('fileInput').files[0], name: document.getElementById('fileInput').files[0].name });
-                            log.innerText = "WOSH! TERKIRIM!";
+                            conn.send({ 
+                                file: document.getElementById('fileInput').files[0], 
+                                name: document.getElementById('fileInput').files[0].name 
+                            });
+                            statusMsg.innerText = "🚀 WOSHH! TERKIRIM!";
+                            statusMsg.style.color = "#00ff00";
                             isHolding = false;
                         }
                     }
@@ -76,9 +97,13 @@
 
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 480, height: 360
+            width: 640, height: 480
         });
-        camera.start();
+        
+        // Mulai kamera otomatis
+        camera.start().then(() => {
+            statusMsg.innerText = "Kamera Siap. Tunggu AI (5-10 detik)...";
+        });
     </script>
 </body>
 </html>
