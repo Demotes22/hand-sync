@@ -2,82 +2,59 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Hand-Sync: PENERIMA (HP)</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <title>Hand-Sync: PENERIMA</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0d1117; color: white; text-align: center; margin: 0; overflow: hidden; }
+        body { font-family: sans-serif; background: #0d1117; color: white; text-align: center; }
         #webcam { position: fixed; top: 0; left: 0; min-width: 100%; min-height: 100%; opacity: 0.2; z-index: -1; transform: scaleX(-1); }
-        .ui { position: relative; z-index: 1; padding: 40px 20px; }
-        .badge { background: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #30363d; display: inline-block; }
-        #msg { font-size: 1.4em; margin-top: 30px; color: #ffca28; font-weight: bold; }
-        .zone { width: 180px; height: 180px; border: 4px dashed #58a6ff; margin: 30px auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
-        .waiting { border-color: #00ff00; background: rgba(0, 255, 0, 0.2); animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        .badge { background: #161b22; padding: 20px; border-radius: 10px; margin-top: 50px; display: inline-block; border: 1px solid #333; }
+        .circle { width: 150px; height: 150px; border: 5px dashed #58a6ff; border-radius: 50%; margin: 30px auto; display: flex; align-items: center; justify-content: center; font-size: 3em; }
+        .glow { border-color: #00ff00; box-shadow: 0 0 20px #00ff00; }
     </style>
 </head>
 <body>
     <video id="webcam" playsinline autoplay></video>
-    <div class="ui">
-        <div class="badge">
-            ID HP ANDA:<br>
-            <span id="my-id" style="font-size: 1.5em; color: #58a6ff;">Mencari...</span>
-        </div>
-        <div id="msg">Menunggu Lemparan...</div>
-        <div class="zone" id="zone">✋</div>
-        <p>Genggam tangan di area lingkaran jika file datang!</p>
+    <div class="badge">
+        ID HP ANDA:<br>
+        <span id="my-id" style="font-size: 1.5em; color: #58a6ff;">Mencari...</span>
     </div>
+    <p id="msg" style="font-weight: bold; margin-top: 20px;">Menunggu lemparan...</p>
+    <div class="circle" id="circle">✋</div>
 
     <script>
         const msg = document.getElementById('msg');
-        const zone = document.getElementById('zone');
+        const circle = document.getElementById('circle');
         let peer = new Peer();
         let pendingFile = null;
 
-        function playDing() {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(440, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
-            osc.connect(gain); gain.connect(ctx.destination);
-            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-            osc.start(); osc.stop(ctx.currentTime + 0.3);
-        }
-
         peer.on('open', id => document.getElementById('my-id').innerText = id);
-
         peer.on('connection', (conn) => {
-            msg.innerText = "Terhubung dengan Laptop!";
             conn.on('data', (data) => {
                 pendingFile = data;
-                msg.innerText = "ADA FILE DATANG! TANGKAP SEKARANG!";
-                zone.classList.add('waiting');
-                zone.innerText = "✊";
+                msg.innerText = "FILE DATANG! TANGKAP!";
+                circle.classList.add('glow');
+                circle.innerText = "✊";
             });
         });
 
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.7 });
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
         hands.onResults(results => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
                 const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
                 if (isFist && pendingFile) {
-                    playDing();
-                    const blob = new Blob([pendingFile.file], { type: pendingFile.type });
+                    const blob = new Blob([pendingFile.file]);
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
                     a.download = pendingFile.name;
                     a.click();
                     pendingFile = null;
-                    zone.classList.remove('waiting');
-                    zone.innerText = "✅";
-                    msg.innerText = "DITANGKAP!";
-                    setTimeout(() => { msg.innerText = "Siap menerima lagi..."; zone.innerText = "✋"; }, 3000);
+                    circle.classList.remove('glow');
+                    circle.innerText = "✅";
+                    msg.innerText = "BERHASIL DITANGKAP!";
                 }
             }
         });
