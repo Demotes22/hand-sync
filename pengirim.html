@@ -1,81 +1,81 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Hand-Sync: PENGIRIM</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <title>Pengirim - Hand Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; text-align: center; }
-        #webcam { transform: scaleX(-1); border-radius: 10px; border: 3px solid #444; }
-        .box { background: #252525; padding: 20px; border-radius: 10px; display: inline-block; margin: 10px; }
-        #status { font-weight: bold; color: #ffca28; }
+        body { background: #1a1a1a; color: white; text-align: center; font-family: sans-serif; }
+        #canvas_output { position: absolute; left: 50%; transform: translateX(-50%); border: 2px solid #58a6ff; border-radius: 10px; }
+        .controls { margin: 20px; padding: 15px; background: #333; display: inline-block; border-radius: 10px; }
+        #log { color: #00ff00; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h2>🚀 Mode Pengirim (Laptop)</h2>
-    <div class="box">
+    <h2>💻 Mode Pengirim</h2>
+    <div class="controls">
         <input type="text" id="targetId" placeholder="ID HP Penerima">
-        <button onclick="hubungkan()">Hubungkan</button><br><br>
+        <button onclick="hubungkan()">1. Hubungkan</button><br><br>
         <input type="file" id="fileInput">
-        <p id="status">Status: Menunggu ID...</p>
+        <div id="log">Status: Tunggu AI memuat...</div>
     </div>
-    <br>
-    <video id="webcam" width="480" height="360" autoplay playsinline></video>
+    <div style="position: relative; height: 360px;">
+        <video id="input_video" style="display:none"></video>
+        <canvas id="canvas_output" width="480" height="360"></canvas>
+    </div>
 
     <script>
-        const status = document.getElementById('status');
-        const fileInput = document.getElementById('fileInput');
-        let peer = new Peer();
-        let conn;
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('canvas_output');
+        const canvasCtx = canvasElement.getContext('2d');
+        const log = document.getElementById('log');
         let isHolding = false;
-
-        function playWoosh() {
-            const ctx = new AudioContext();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'white-noise';
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-            osc.connect(gain); gain.connect(ctx.destination);
-            osc.start(); osc.stop(ctx.currentTime + 0.5);
-        }
+        let conn;
+        let peer = new Peer();
 
         function hubungkan() {
             const id = document.getElementById('targetId').value;
-            conn = peer.connect(id, { reliable: true });
-            conn.on('open', () => { status.innerText = "TERHUBUNG! Siap Melempar."; status.style.color = "#00ff00"; });
+            conn = peer.connect(id);
+            conn.on('open', () => log.innerText = "Terhubung! Genggam di Kiri, Geser ke Kanan.");
         }
 
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
-        hands.onResults(results => {
+        hands.onResults((results) => {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const lm = results.multiHandLandmarks[0];
-                const xPos = 1 - lm[0].x; 
-                const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
+                log.innerText = "Tangan Terdeteksi!";
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+                    
+                    const xPos = landmarks[0].x; // Koordinat tangan
+                    const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
 
-                if (isFist && xPos < 0.3) {
-                    isHolding = true;
-                    status.innerText = "DIGENGGAM! Geser ke kanan...";
-                }
-                if (isHolding && isFist && xPos > 0.8) {
-                    if (conn && conn.open && fileInput.files[0]) {
-                        playWoosh();
-                        conn.send({ file: fileInput.files[0], name: fileInput.files[0].name });
-                        status.innerText = "WOSHH! TERKIRIM!";
-                        isHolding = false;
+                    if (isFist && xPos > 0.7) { // Sisi kiri (karena mirror)
+                        isHolding = true;
+                        log.innerText = "FILE DIGENGGAM!";
+                    }
+                    if (isHolding && isFist && xPos < 0.2) { // Sisi kanan
+                        if (conn && conn.open && document.getElementById('fileInput').files[0]) {
+                            conn.send({ file: document.getElementById('fileInput').files[0], name: document.getElementById('fileInput').files[0].name });
+                            log.innerText = "WOSH! TERKIRIM!";
+                            isHolding = false;
+                        }
                     }
                 }
-                if (!isFist) isHolding = false;
             }
+            canvasCtx.restore();
         });
 
-        const camera = new Camera(document.getElementById('webcam'), {
-            onFrame: async () => { await hands.send({image: document.getElementById('webcam')}); },
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
             width: 480, height: 360
         });
         camera.start();
