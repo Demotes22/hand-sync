@@ -1,113 +1,59 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Penerima: Fix Camera</title>
+    <title>Terima File</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #000; color: white; text-align: center; margin: 0; font-family: sans-serif; overflow: hidden; }
-        #canvas_out { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: scaleX(-1); display: none; }
-        #preview-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; justify-content: center; align-items: center; }
-        #render-box { max-width: 90%; max-height: 70%; border: 3px solid #00ff00; border-radius: 10px; }
-        .ui { position: relative; z-index: 10; padding-top: 20px; }
-        #start-btn { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px 40px; font-size: 1.2em; background: #238636; color: white; border: none; border-radius: 10px; z-index: 50; cursor: pointer; }
-        #msg { background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; display: inline-block; border: 1px solid #333; }
+        body { background: #000; color: #fff; text-align: center; margin: 0; font-family: sans-serif; overflow: hidden; }
+        video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.4; transform: scaleX(-1); }
+        .box { position: relative; z-index: 10; margin-top: 30%; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 15px; display: inline-block; border: 1px solid #444; }
+        #view { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #000; z-index: 100; align-items: center; justify-content: center; }
+        img, video { max-width: 95%; max-height: 85%; border: 2px solid #00ff00; }
     </style>
 </head>
 <body>
-
-    <video id="v_in" playsinline style="display:none"></video>
-    <canvas id="canvas_out"></canvas>
-
-    <button id="start-btn">AKTIFKAN KAMERA & AI</button>
-
-    <div id="preview-layer">
-        <div id="media-content"></div>
-        <button style="margin-top:20px; padding:10px 20px;" onclick="tutupPreview()">TUTUP</button>
+    <video id="vid" autoplay playsinline></video>
+    <div class="box">
+        <h2 style="color:#58a6ff">PENERIMA (HP)</h2>
+        <p>ID TETAP: <b style="color:#00ff00">tangan-hp</b></p>
+        <p id="msg">Klik layar untuk aktifkan kamera</p>
     </div>
 
-    <div class="ui">
-        <div id="msg">
-            ID HP: <b id="my-id" style="color:#58a6ff;">...</b><br>
-            <span id="status">Klik tombol hijau untuk mulai</span>
-        </div>
+    <div id="view" onclick="this.style.display='none'">
+        <div id="content"></div>
     </div>
 
     <script>
-        const statusText = document.getElementById('status');
-        const startBtn = document.getElementById('start-btn');
-        const canvasElement = document.getElementById('canvas_out');
-        const canvasCtx = canvasElement.getContext('2d');
-        const videoElement = document.getElementById('v_in');
-        
-        let peer = new Peer(), pending = null;
+        // ID Penerima tetap: tangan-hp
+        let peer = new Peer('tangan-hp'), pending = null;
 
-        peer.on('open', id => document.getElementById('my-id').innerText = id);
         peer.on('connection', c => {
             c.on('data', d => { 
                 pending = d; 
-                statusText.innerText = "FILE MASUK! KEPAL TANGAN!";
-                statusText.style.color = "#00ff00";
+                document.getElementById('msg').innerText = "DAPAT FILE! KEPAL TANGAN!"; 
+                document.getElementById('msg').style.color = "#00ff00";
             });
         });
 
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5});
-
         hands.onResults(res => {
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(res.image, 0, 0, canvasElement.width, canvasElement.height);
-            if (res.multiHandLandmarks) {
-                for (const landmarks of res.multiHandLandmarks) {
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-                    const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
-                    if (isFist && pending) {
-                        bukaFile(pending);
-                        pending = null;
-                    }
+            if (res.multiHandLandmarks[0] && pending) {
+                const lm = res.multiHandLandmarks[0];
+                if (lm[8].y > lm[6].y && lm[12].y > lm[10].y) {
+                    const url = URL.createObjectURL(new Blob([pending.file], {type: pending.type}));
+                    const con = document.getElementById('content');
+                    con.innerHTML = pending.type.startsWith('image') ? `<img src="${url}">` : `<video src="${url}" autoplay controls>`;
+                    document.getElementById('view').style.display = 'flex';
+                    pending = null;
                 }
             }
-            canvasCtx.restore();
         });
 
-        function bukaFile(d) {
-            const url = URL.createObjectURL(new Blob([d.file], { type: d.type }));
-            const box = document.getElementById('media-content');
-            box.innerHTML = '';
-            if (d.type && d.type.startsWith('image/')) {
-                const img = new Image(); img.src = url; img.id = 'render-box'; box.appendChild(img);
-            } else if (d.type && d.type.startsWith('video/')) {
-                const vid = document.createElement('video'); vid.src = url; vid.id = 'render-box'; vid.autoplay = true; vid.controls = true; box.appendChild(vid);
-            }
-            document.getElementById('preview-layer').style.display = 'flex';
-        }
-
-        function tutupPreview() { document.getElementById('preview-layer').style.display = 'none'; statusText.innerText = "Siap menerima..."; }
-
-        startBtn.onclick = async () => {
-            startBtn.innerText = "Memulai Kamera...";
-            try {
-                const camera = new Camera(videoElement, {
-                    onFrame: async () => {
-                        canvasElement.width = videoElement.videoWidth;
-                        canvasElement.height = videoElement.videoHeight;
-                        await hands.send({image: videoElement});
-                    },
-                    width: 640, height: 480
-                });
-                await camera.start();
-                canvasElement.style.display = "block";
-                startBtn.style.display = "none";
-                statusText.innerText = "Kamera Berhasil Aktif!";
-            } catch (err) {
-                alert("Gagal akses kamera: " + err);
-                startBtn.innerText = "COBA LAGI";
-            }
+        document.body.onclick = () => {
+            new Camera(document.getElementById('vid'), { onFrame: async () => { await hands.send({image: document.getElementById('vid')}); } }).start();
+            document.getElementById('msg').innerText = "Kamera Aktif & Menunggu...";
         };
     </script>
 </body>
