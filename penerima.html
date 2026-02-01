@@ -3,101 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand-Sync: PENERIMA (HP)</title>
+    <title>Hand-Sync: AUTO-OPEN</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0d1117; color: white; text-align: center; margin: 0; overflow: hidden; }
-        /* Video transparan sebagai latar belakang */
+        body { font-family: sans-serif; background: #000; color: white; text-align: center; margin: 0; overflow: hidden; }
         #input_video { display: none; }
-        #output_canvas { position: fixed; top: 0; left: 0; min-width: 100%; min-height: 100%; opacity: 0.3; z-index: -1; transform: scaleX(-1); }
-        .ui { position: relative; z-index: 1; padding: 20px; }
-        .badge { background: #161b22; padding: 15px; border-radius: 12px; border: 1px solid #30363d; display: inline-block; margin-top: 20px; }
-        #msg { font-size: 1.2em; margin: 20px 0; color: #ffca28; font-weight: bold; min-height: 1.5em; }
-        .zone { width: 150px; height: 150px; border: 4px dashed #58a6ff; margin: 20px auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 3em; transition: all 0.3s; }
-        .active-zone { border-color: #00ff00; background: rgba(0, 255, 0, 0.2); box-shadow: 0 0 20px #00ff00; animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        #output_canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.4; z-index: 1; transform: scaleX(-1); }
+        
+        /* Container untuk menampilkan file yang masuk */
+        #preview-container { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; background: black; z-index: 10; 
+            justify-content: center; align-items: center; 
+        }
+        #preview-container img, #preview-container video { max-width: 90%; max-height: 90%; border-radius: 10px; border: 3px solid #00ff00; }
+        
+        .ui-overlay { position: relative; z-index: 5; padding-top: 50px; }
+        .badge { background: rgba(22, 27, 34, 0.8); padding: 15px; border-radius: 12px; border: 1px solid #30363d; display: inline-block; }
+        #msg { font-size: 1.3em; color: #ffca28; text-shadow: 2px 2px 4px #000; }
+        .btn-close { position: absolute; top: 20px; right: 20px; padding: 10px; background: red; color: white; border: none; border-radius: 5px; z-index: 11; }
     </style>
 </head>
 <body>
+
     <canvas id="output_canvas"></canvas>
     <video id="input_video" playsinline autoplay></video>
 
-    <div class="ui">
-        <div class="badge">
-            ID HP ANDA:<br>
-            <span id="my-id" style="font-size: 1.4em; color: #58a6ff;">Mencari...</span>
-        </div>
-        
-        <p id="msg">Klik layar untuk aktifkan sistem</p>
-        
-        <div class="zone" id="zone">✋</div>
-        
-        <p style="font-size: 0.9em; color: #8b949e;">Pastikan garis hijau muncul di tangan Anda!</p>
+    <div id="preview-container">
+        <button class="btn-close" onclick="closePreview()">Tutup X</button>
+        <div id="file-content"></div>
+    </div>
+
+    <div class="ui-overlay">
+        <div class="badge">ID HP: <span id="my-id" style="color: #58a6ff;">Mencari...</span></div>
+        <p id="msg">Sentuh layar untuk memulai</p>
+        <div id="status-icon" style="font-size: 4em;">✋</div>
     </div>
 
     <script>
         const msg = document.getElementById('msg');
-        const zone = document.getElementById('zone');
+        const fileContent = document.getElementById('file-content');
+        const previewContainer = document.getElementById('preview-container');
         const videoElement = document.getElementById('input_video');
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
         
         let peer = new Peer();
         let pendingFile = null;
-        let audioPermission = false;
+        let canInteract = false;
 
-        // Suara "Ding" saat menangkap
-        function playDing() {
-            if(!audioPermission) return;
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(440, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
-            osc.connect(gain); gain.connect(ctx.destination);
-            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-            osc.start(); osc.stop(ctx.currentTime + 0.3);
-        }
+        document.body.addEventListener('click', () => { canInteract = true; msg.innerText = "Siap Menangkap!"; }, { once: true });
 
-        // Aktifkan audio & sistem saat layar di-klik
-        document.body.addEventListener('click', () => {
-            audioPermission = true;
-            msg.innerText = "Sistem Siap. Menunggu Lemparan...";
-        }, { once: true });
-
-        // Tampilkan ID PeerJS
         peer.on('open', id => document.getElementById('my-id').innerText = id);
 
-        // Logika menerima koneksi
         peer.on('connection', (conn) => {
-            msg.innerText = "Terhubung dengan Laptop!";
-            if (navigator.vibrate) navigator.vibrate(100);
-
             conn.on('data', (data) => {
-                pendingFile = data;
-                msg.innerText = "ADA FILE DATANG! TANGKAP!";
-                zone.classList.add('active-zone');
-                zone.innerText = "✊";
-                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                pendingFile = data; 
+                msg.innerText = "FILE MASUK! KEPALKAN TANGAN!";
+                document.getElementById('status-icon').innerText = "✊";
             });
         });
 
-        // Inisialisasi AI Hands
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
 
         hands.onResults((results) => {
             canvasElement.width = window.innerWidth;
@@ -107,45 +78,59 @@
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
             
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                for (const landmarks of results.multiHandLandmarks) {
-                    // Gambar Garis Hijau di HP
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
-                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
-                    
-                    const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
+                const landmarks = results.multiHandLandmarks[0];
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+                
+                const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
 
-                    // Jika tangan mengepal dan ada file yang menunggu
-                    if (isFist && pendingFile) {
-                        playDing();
-                        const blob = new Blob([pendingFile.file]);
-                        const url = URL.createObjectURL(blob);
-                        
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = pendingFile.name;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-
-                        pendingFile = null;
-                        zone.classList.remove('active-zone');
-                        zone.innerText = "✅";
-                        msg.innerText = "BERHASIL DITANGKAP!";
-                        setTimeout(() => { 
-                            msg.innerText = "Siap menerima lagi..."; 
-                            zone.innerText = "✋"; 
-                        }, 3000);
-                    }
+                if (isFist && pendingFile) {
+                    processFile(pendingFile);
+                    pendingFile = null;
                 }
             }
             canvasCtx.restore();
         });
 
-        const camera = new Camera(videoElement, {
+        function processFile(data) {
+            // 1. Buat Blob
+            const blob = new Blob([data.file]);
+            const url = URL.createObjectURL(blob);
+            
+            // 2. Download Otomatis (Tanpa Klik)
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = data.name;
+            a.click();
+
+            // 3. Langsung Tampilkan/Buka (Jika Gambar/Video)
+            fileContent.innerHTML = '';
+            if (data.name.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                const img = document.createElement('img');
+                img.src = url;
+                fileContent.appendChild(img);
+                previewContainer.style.display = 'flex';
+            } else if (data.name.match(/\.(mp4|webm)$/i)) {
+                const vid = document.createElement('video');
+                vid.src = url;
+                vid.autoplay = true;
+                vid.controls = true;
+                fileContent.appendChild(vid);
+                previewContainer.style.display = 'flex';
+            } else {
+                msg.innerText = "File terdownload: " + data.name;
+            }
+        }
+
+        function closePreview() {
+            previewContainer.style.display = 'none';
+            msg.innerText = "Menunggu lemparan berikutnya...";
+            document.getElementById('status-icon').innerText = "✋";
+        }
+
+        new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
             width: 480, height: 640
-        });
-        camera.start();
+        }).start();
     </script>
 </body>
 </html>
