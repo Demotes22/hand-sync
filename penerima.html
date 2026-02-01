@@ -3,132 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand-Sync: AUTO-OPEN</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>Hand-Sync: PENERIMA</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #000; color: white; text-align: center; margin: 0; overflow: hidden; }
-        #input_video { display: none; }
-        #output_canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.4; z-index: 1; transform: scaleX(-1); }
-        
-        /* Container untuk menampilkan file yang masuk */
-        #preview-container { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            display: none; background: black; z-index: 10; 
-            justify-content: center; align-items: center; 
-        }
-        #preview-container img, #preview-container video { max-width: 90%; max-height: 90%; border-radius: 10px; border: 3px solid #00ff00; }
-        
-        .ui-overlay { position: relative; z-index: 5; padding-top: 50px; }
-        .badge { background: rgba(22, 27, 34, 0.8); padding: 15px; border-radius: 12px; border: 1px solid #30363d; display: inline-block; }
-        #msg { font-size: 1.3em; color: #ffca28; text-shadow: 2px 2px 4px #000; }
-        .btn-close { position: absolute; top: 20px; right: 20px; padding: 10px; background: red; color: white; border: none; border-radius: 5px; z-index: 11; }
+        body { background: #000; color: white; text-align: center; margin: 0; overflow: hidden; font-family: sans-serif; }
+        #canvas_out { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.3; z-index: 1; transform: scaleX(-1); }
+        #preview { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #000; z-index: 100; justify-content: center; align-items: center; flex-direction: column; }
+        #render { max-width: 95%; max-height: 80%; border: 3px solid #00ff00; border-radius: 10px; }
+        .ui { position: relative; z-index: 10; padding-top: 40px; }
+        .close-btn { margin-top: 20px; padding: 10px 20px; background: #ff4444; color: white; border: none; border-radius: 5px; }
     </style>
 </head>
 <body>
+    <canvas id="canvas_out"></canvas>
+    <video id="v_in" style="display:none" playsinline autoplay></video>
 
-    <canvas id="output_canvas"></canvas>
-    <video id="input_video" playsinline autoplay></video>
-
-    <div id="preview-container">
-        <button class="btn-close" onclick="closePreview()">Tutup X</button>
-        <div id="file-content"></div>
+    <div id="preview">
+        <div id="box"></div>
+        <button class="close-btn" onclick="tutup()">TUTUP X</button>
     </div>
 
-    <div class="ui-overlay">
-        <div class="badge">ID HP: <span id="my-id" style="color: #58a6ff;">Mencari...</span></div>
-        <p id="msg">Sentuh layar untuk memulai</p>
-        <div id="status-icon" style="font-size: 4em;">✋</div>
+    <div class="ui">
+        <div style="background:rgba(0,0,0,0.7); padding:10px; display:inline-block; border-radius:8px;">
+            ID HP: <b id="my-id" style="color:#58a6ff;">...</b><br>
+            <span id="msg">Klik layar & tunggu AI...</span>
+        </div>
     </div>
 
     <script>
         const msg = document.getElementById('msg');
-        const fileContent = document.getElementById('file-content');
-        const previewContainer = document.getElementById('preview-container');
-        const videoElement = document.getElementById('input_video');
-        const canvasElement = document.getElementById('output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        
-        let peer = new Peer();
-        let pendingFile = null;
-        let canInteract = false;
+        const box = document.getElementById('box');
+        const preview = document.getElementById('preview');
+        let peer = new Peer(), pending = null;
 
-        document.body.addEventListener('click', () => { canInteract = true; msg.innerText = "Siap Menangkap!"; }, { once: true });
-
+        document.body.onclick = () => { msg.innerText = "Sistem Aktif. Menunggu Lemparan..."; };
         peer.on('open', id => document.getElementById('my-id').innerText = id);
-
-        peer.on('connection', (conn) => {
-            conn.on('data', (data) => {
-                pendingFile = data; 
-                msg.innerText = "FILE MASUK! KEPALKAN TANGAN!";
-                document.getElementById('status-icon').innerText = "✊";
+        
+        peer.on('connection', c => {
+            c.on('data', d => { 
+                pending = d; 
+                msg.innerText = "FILE MASUK! KEPAL TANGAN UNTUK BUKA!"; 
+                if(navigator.vibrate) navigator.vibrate(200);
             });
         });
 
-        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
-
-        hands.onResults((results) => {
-            canvasElement.width = window.innerWidth;
-            canvasElement.height = window.innerHeight;
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+        function buka(d) {
+            const blob = new Blob([d.file], { type: d.type || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            box.innerHTML = '';
             
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-                
-                const isFist = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
-
-                if (isFist && pendingFile) {
-                    processFile(pendingFile);
-                    pendingFile = null;
-                }
+            if (d.type && d.type.startsWith('image/')) {
+                const img = new Image(); img.src = url; img.id = 'render'; box.appendChild(img);
+            } else if (d.type && d.type.startsWith('video/')) {
+                const vid = document.createElement('video'); vid.src = url; vid.id = 'render'; vid.autoplay = true; vid.controls = true; box.appendChild(vid);
+            } else {
+                const a = document.createElement('a'); a.href = url; a.download = d.name; a.click();
+                msg.innerText = "File terdownload!"; return;
             }
-            canvasCtx.restore();
+            preview.style.display = 'flex';
+        }
+
+        function tutup() { preview.style.display = 'none'; pending = null; msg.innerText = "Siap menerima lagi..."; }
+
+        const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.5});
+        hands.onResults(res => {
+            const ctx = document.getElementById('canvas_out').getContext('2d');
+            document.getElementById('canvas_out').width = window.innerWidth;
+            document.getElementById('canvas_out').height = window.innerHeight;
+            ctx.drawImage(res.image, 0, 0, window.innerWidth, window.innerHeight);
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                const lm = res.multiHandLandmarks[0];
+                drawConnectors(ctx, lm, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+                if (lm[8].y > lm[6].y && lm[12].y > lm[10].y && pending) buka(pending);
+            }
         });
 
-        function processFile(data) {
-            // 1. Buat Blob
-            const blob = new Blob([data.file]);
-            const url = URL.createObjectURL(blob);
-            
-            // 2. Download Otomatis (Tanpa Klik)
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = data.name;
-            a.click();
-
-            // 3. Langsung Tampilkan/Buka (Jika Gambar/Video)
-            fileContent.innerHTML = '';
-            if (data.name.match(/\.(jpg|jpeg|png|gif)$/i)) {
-                const img = document.createElement('img');
-                img.src = url;
-                fileContent.appendChild(img);
-                previewContainer.style.display = 'flex';
-            } else if (data.name.match(/\.(mp4|webm)$/i)) {
-                const vid = document.createElement('video');
-                vid.src = url;
-                vid.autoplay = true;
-                vid.controls = true;
-                fileContent.appendChild(vid);
-                previewContainer.style.display = 'flex';
-            } else {
-                msg.innerText = "File terdownload: " + data.name;
-            }
-        }
-
-        function closePreview() {
-            previewContainer.style.display = 'none';
-            msg.innerText = "Menunggu lemparan berikutnya...";
-            document.getElementById('status-icon').innerText = "✋";
-        }
-
-        new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
+        new Camera(document.getElementById('v_in'), {
+            onFrame: async () => { await hands.send({image: document.getElementById('v_in')}); },
             width: 480, height: 640
         }).start();
     </script>
