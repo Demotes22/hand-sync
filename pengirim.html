@@ -1,58 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Kirim File</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <title>Pengirim - Ultra Stable</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #111; color: #fff; font-family: sans-serif; text-align: center; margin: 0; }
-        video { transform: scaleX(-1); width: 90%; max-width: 400px; border-radius: 10px; margin-top: 10px; border: 2px solid #333; }
-        .ui { padding: 20px; background: #222; border-bottom: 2px solid #444; }
-        button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        #st { color: #ffca28; margin-top: 10px; font-weight: bold; }
+        body { background: #111; color: white; text-align: center; font-family: sans-serif; margin: 0; }
+        .header { background: #222; padding: 20px; border-bottom: 2px solid #444; }
+        #vid_container { position: relative; display: inline-block; margin-top: 20px; }
+        video { transform: scaleX(-1); width: 640px; height: 480px; border-radius: 10px; background: #000; }
+        canvas { position: absolute; top: 0; left: 0; transform: scaleX(-1); }
+        #status { color: #00ff00; font-weight: bold; margin: 10px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <div class="ui">
-        <h3>PENGIRIM (LAPTOP)</h3>
-        <input type="file" id="f"><br><br>
-        <button onclick="konek()">HUBUNGKAN KE HP</button>
-        <div id="st">Status: Klik Hubungkan</div>
+    <div class="header">
+        <input type="file" id="f">
+        <button onclick="hubungkan()">HUBUNGKAN KE HP</button>
+        <div id="status">Status: Memuat AI...</div>
     </div>
-    <video id="vid" autoplay playsinline></video>
+    <div id="vid_container">
+        <video id="v" autoplay playsinline></video>
+        <canvas id="c"></canvas>
+    </div>
 
     <script>
-        // ID Pengirim tetap: tangan-laptop
-        let peer = new Peer('tangan-laptop'), conn, hold = false;
-        const st = document.getElementById('st');
+        const st = document.getElementById('status');
+        const v = document.getElementById('v');
+        const c = document.getElementById('c');
+        const ctx = c.getContext('2d');
+        let peer = new Peer('laptop-unik-123'), conn, hold = false;
 
-        function konek() {
-            st.innerText = "Menghubungkan...";
-            // Langsung tembak ke ID HP: tangan-hp
-            conn = peer.connect('tangan-hp');
-            conn.on('open', () => {
-                st.innerText = "TERHUBUNG KE HP! Siap Melempar.";
-                st.style.color = "#00ff00";
-            });
-            conn.on('error', () => st.innerText = "Gagal. Pastikan HP sudah buka halaman.");
+        function hubungkan() {
+            st.innerText = "Menghubungkan ke HP...";
+            conn = peer.connect('hp-unik-123');
+            conn.on('open', () => st.innerText = "TERHUBUNG! Siap Melempar.");
         }
 
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5});
+        
         hands.onResults(res => {
-            if (res.multiHandLandmarks[0]) {
+            c.width = v.videoWidth; c.height = v.videoHeight;
+            ctx.clearRect(0, 0, c.width, c.height);
+            if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                st.innerText = "AI Aktif: Tangan Terdeteksi";
                 const lm = res.multiHandLandmarks[0];
                 const kepal = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                if (kepal && lm[0].x > 0.7) hold = true;
-                if (hold && kepal && lm[0].x < 0.3 && conn && document.getElementById('f').files[0]) {
+                
+                if (kepal && lm[0].x > 0.7) { hold = true; st.innerText = "✊ GENGGAM!"; }
+                if (hold && kepal && lm[0].x < 0.3 && conn?.open && document.getElementById('f').files[0]) {
                     const file = document.getElementById('f').files[0];
                     conn.send({ file: file, name: file.name, type: file.type });
-                    st.innerText = "🚀 FILE TERLEMPAR!";
+                    st.innerText = "🚀 TERKIRIM!";
                     hold = false;
                 }
             }
         });
-        new Camera(document.getElementById('vid'), { onFrame: async () => { await hands.send({image: document.getElementById('vid')}); } }).start();
+
+        const cam = new Camera(v, { onFrame: async () => await hands.send({image: v}), width: 640, height: 480 });
+        cam.start().then(() => st.innerText = "Kamera Siap. Menunggu AI...");
     </script>
 </body>
 </html>
