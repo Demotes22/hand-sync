@@ -1,67 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pengirim - Ultra Stable</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>Hand-Sync: PENGIRIM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; color: white; text-align: center; font-family: sans-serif; margin: 0; }
-        .header { background: #222; padding: 20px; border-bottom: 2px solid #444; }
-        #vid_container { position: relative; display: inline-block; margin-top: 20px; }
-        video { transform: scaleX(-1); width: 640px; height: 480px; border-radius: 10px; background: #000; }
-        canvas { position: absolute; top: 0; left: 0; transform: scaleX(-1); }
-        #status { color: #00ff00; font-weight: bold; margin: 10px; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .ui { background: #222; padding: 20px; border-bottom: 2px solid #444; }
+        video { transform: scaleX(-1); width: 80%; max-width: 500px; border-radius: 10px; margin-top: 20px; border: 2px solid #333; }
+        #log { color: #00ff00; font-weight: bold; margin-top: 10px; }
+        input, button { padding: 10px; border-radius: 5px; border: none; margin: 5px; }
+        button { background: #007bff; color: white; cursor: pointer; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <input type="file" id="f">
-        <button onclick="hubungkan()">HUBUNGKAN KE HP</button>
-        <div id="status">Status: Memuat AI...</div>
+    <div class="ui">
+        <input type="text" id="targetId" placeholder="Masukkan ID HP">
+        <button onclick="hubungkan()">HUBUNGKAN</button><br>
+        <input type="file" id="fileInput">
+        <div id="log">Status: Menunggu AI...</div>
     </div>
-    <div id="vid_container">
-        <video id="v" autoplay playsinline></video>
-        <canvas id="c"></canvas>
-    </div>
+    <video id="input_video" autoplay playsinline></video>
 
     <script>
-        const st = document.getElementById('status');
-        const v = document.getElementById('v');
-        const c = document.getElementById('c');
-        const ctx = c.getContext('2d');
-        let peer = new Peer('laptop-unik-123'), conn, hold = false;
+        const log = document.getElementById('log');
+        const fileInput = document.getElementById('fileInput');
+        const videoElement = document.getElementById('input_video');
+        let peer = new Peer(), conn, isHolding = false;
 
         function hubungkan() {
-            st.innerText = "Menghubungkan ke HP...";
-            conn = peer.connect('hp-unik-123');
-            conn.on('open', () => st.innerText = "TERHUBUNG! Siap Melempar.");
+            const id = document.getElementById('targetId').value;
+            conn = peer.connect(id);
+            conn.on('open', () => log.innerText = "TERHUBUNG! Siap Melempar.");
         }
 
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5});
+        hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.6});
         
         hands.onResults(res => {
-            c.width = v.videoWidth; c.height = v.videoHeight;
-            ctx.clearRect(0, 0, c.width, c.height);
             if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
-                st.innerText = "AI Aktif: Tangan Terdeteksi";
                 const lm = res.multiHandLandmarks[0];
-                const kepal = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                
-                if (kepal && lm[0].x > 0.7) { hold = true; st.innerText = "✊ GENGGAM!"; }
-                if (hold && kepal && lm[0].x < 0.3 && conn?.open && document.getElementById('f').files[0]) {
-                    const file = document.getElementById('f').files[0];
-                    conn.send({ file: file, name: file.name, type: file.type });
-                    st.innerText = "🚀 TERKIRIM!";
-                    hold = false;
+                const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
+                const xPos = lm[0].x;
+
+                // Logika Genggam di Kanan Layar (X > 0.7)
+                if (isFist && xPos > 0.7) { 
+                    isHolding = true; 
+                    log.innerText = "✊ FILE DIGENGGAM!"; 
                 }
+
+                // Logika Lempar di Kiri Layar (X < 0.3)
+                if (isHolding && isFist && xPos < 0.3) {
+                    if (conn && conn.open && fileInput.files[0]) {
+                        const file = fileInput.files[0];
+                        
+                        // LOGIKA PENTING YANG ANDA MINTA:
+                        conn.send({ 
+                            file: file, 
+                            name: file.name, 
+                            type: file.type // Mengirim info gambar/video
+                        });
+                        
+                        log.innerText = "🚀 WOSHH! TERKIRIM!";
+                        isHolding = false;
+                    }
+                }
+                if (!isFist) isHolding = false;
             }
         });
 
-        const cam = new Camera(v, { onFrame: async () => await hands.send({image: v}), width: 640, height: 480 });
-        cam.start().then(() => st.innerText = "Kamera Siap. Menunggu AI...");
+        new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        }).start();
     </script>
 </body>
 </html>
