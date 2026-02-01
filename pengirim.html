@@ -1,79 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hand-Sync: PENGIRIM</title>
+    <title>Pengirim: Deteksi Stabil</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #111; color: white; text-align: center; font-family: sans-serif; margin: 0; }
+        body { background: #111; color: white; text-align: center; font-family: sans-serif; }
+        #container { position: relative; display: inline-block; margin-top: 20px; }
+        canvas { position: absolute; top: 0; left: 0; transform: scaleX(-1); }
+        video { transform: scaleX(-1); width: 640px; height: 480px; border-radius: 10px; background: #000; }
         .ui { background: #222; padding: 20px; border-bottom: 2px solid #444; }
-        video { transform: scaleX(-1); width: 80%; max-width: 500px; border-radius: 10px; margin-top: 20px; border: 2px solid #333; }
-        #log { color: #00ff00; font-weight: bold; margin-top: 10px; }
-        input, button { padding: 10px; border-radius: 5px; border: none; margin: 5px; }
-        button { background: #007bff; color: white; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="ui">
-        <input type="text" id="targetId" placeholder="Masukkan ID HP">
-        <button onclick="hubungkan()">HUBUNGKAN</button><br>
+        <input type="text" id="targetId" placeholder="ID HP Penerima">
+        <button onclick="hubungkan()">HUBUNGKAN</button> | 
         <input type="file" id="fileInput">
-        <div id="log">Status: Menunggu AI...</div>
+        <div id="log" style="color: #00ff00; margin-top:10px;">Memulai AI...</div>
     </div>
-    <video id="input_video" autoplay playsinline></video>
+    <div id="container">
+        <video id="input_video" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
 
     <script>
         const log = document.getElementById('log');
-        const fileInput = document.getElementById('fileInput');
-        const videoElement = document.getElementById('input_video');
+        const v = document.getElementById('input_video');
+        const c = document.getElementById('output_canvas');
+        const ctx = c.getContext('2d');
         let peer = new Peer(), conn, isHolding = false;
 
         function hubungkan() {
-            const id = document.getElementById('targetId').value;
-            conn = peer.connect(id);
+            conn = peer.connect(document.getElementById('targetId').value);
             conn.on('open', () => log.innerText = "TERHUBUNG! Siap Melempar.");
         }
 
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.6});
-        
+        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+
         hands.onResults(res => {
+            c.width = v.videoWidth; c.height = v.videoHeight;
+            ctx.clearRect(0, 0, c.width, c.height);
             if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                log.innerText = "Tangan Terdeteksi!";
                 const lm = res.multiHandLandmarks[0];
+                drawConnectors(ctx, lm, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+                
                 const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                const xPos = lm[0].x;
-
-                // Logika Genggam di Kanan Layar (X > 0.7)
-                if (isFist && xPos > 0.7) { 
-                    isHolding = true; 
-                    log.innerText = "✊ FILE DIGENGGAM!"; 
+                if (isFist && lm[0].x > 0.7) isHolding = true;
+                if (isHolding && isFist && lm[0].x < 0.3 && conn?.open && document.getElementById('fileInput').files[0]) {
+                    const f = document.getElementById('fileInput').files[0];
+                    conn.send({ file: f, name: f.name, type: f.type });
+                    log.innerText = "🚀 TERKIRIM!";
+                    isHolding = false;
                 }
-
-                // Logika Lempar di Kiri Layar (X < 0.3)
-                if (isHolding && isFist && xPos < 0.3) {
-                    if (conn && conn.open && fileInput.files[0]) {
-                        const file = fileInput.files[0];
-                        
-                        // LOGIKA PENTING YANG ANDA MINTA:
-                        conn.send({ 
-                            file: file, 
-                            name: file.name, 
-                            type: file.type // Mengirim info gambar/video
-                        });
-                        
-                        log.innerText = "🚀 WOSHH! TERKIRIM!";
-                        isHolding = false;
-                    }
-                }
-                if (!isFist) isHolding = false;
             }
         });
 
-        new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 640, height: 480
-        }).start();
+        const cam = new Camera(v, { onFrame: async () => await hands.send({image: v}), width: 640, height: 480 });
+        cam.start().then(() => log.innerText = "AI & Kamera Aktif!");
     </script>
 </body>
 </html>
