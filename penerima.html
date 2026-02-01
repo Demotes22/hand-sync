@@ -1,60 +1,75 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Terima File</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <title>Penerima - Ultra Stable</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #000; color: #fff; text-align: center; margin: 0; font-family: sans-serif; overflow: hidden; }
-        video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.4; transform: scaleX(-1); }
-        .box { position: relative; z-index: 10; margin-top: 30%; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 15px; display: inline-block; border: 1px solid #444; }
+        body { background: #000; color: white; text-align: center; margin: 0; overflow: hidden; font-family: sans-serif; }
+        video, canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); }
+        canvas { z-index: 2; pointer-events: none; }
+        #ui { position: relative; z-index: 10; margin-top: 50px; background: rgba(0,0,0,0.7); padding: 20px; display: inline-block; border-radius: 15px; }
+        #start-btn { padding: 20px; font-size: 1.2em; background: #28a745; color: white; border: none; border-radius: 10px; cursor: pointer; }
         #view { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #000; z-index: 100; align-items: center; justify-content: center; }
-        img, video { max-width: 95%; max-height: 85%; border: 2px solid #00ff00; }
+        img, video { max-width: 90%; max-height: 80%; border: 2px solid #00ff00; }
     </style>
 </head>
 <body>
-    <video id="vid" autoplay playsinline></video>
-    <div class="box">
-        <h2 style="color:#58a6ff">PENERIMA (HP)</h2>
-        <p>ID TETAP: <b style="color:#00ff00">tangan-hp</b></p>
-        <p id="msg">Klik layar untuk aktifkan kamera</p>
+    <video id="v" autoplay playsinline></video>
+    <canvas id="c"></canvas>
+
+    <div id="ui">
+        <button id="start-btn" onclick="mulai()">KLIK UNTUK MULAI</button>
+        <p id="msg">Tunggu Aktivasi...</p>
     </div>
 
     <div id="view" onclick="this.style.display='none'">
-        <div id="content"></div>
+        <div id="box"></div>
     </div>
 
     <script>
-        // ID Penerima tetap: tangan-hp
-        let peer = new Peer('tangan-hp'), pending = null;
+        const msg = document.getElementById('msg');
+        const v = document.getElementById('v');
+        const c = document.getElementById('c');
+        const ctx = c.getContext('2d');
+        let peer = new Peer('hp-unik-123'), pending = null;
 
         peer.on('connection', c => {
+            msg.innerText = "Terhubung!";
             c.on('data', d => { 
                 pending = d; 
-                document.getElementById('msg').innerText = "DAPAT FILE! KEPAL TANGAN!"; 
-                document.getElementById('msg').style.color = "#00ff00";
+                msg.innerText = "ADA FILE! KEPAL TANGAN!";
+                msg.style.color = "#0ff";
             });
         });
 
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
         hands.onResults(res => {
-            if (res.multiHandLandmarks[0] && pending) {
-                const lm = res.multiHandLandmarks[0];
-                if (lm[8].y > lm[6].y && lm[12].y > lm[10].y) {
-                    const url = URL.createObjectURL(new Blob([pending.file], {type: pending.type}));
-                    const con = document.getElementById('content');
-                    con.innerHTML = pending.type.startsWith('image') ? `<img src="${url}">` : `<video src="${url}" autoplay controls>`;
-                    document.getElementById('view').style.display = 'flex';
-                    pending = null;
+            c.width = window.innerWidth; c.height = window.innerHeight;
+            ctx.clearRect(0, 0, c.width, c.height);
+            if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                // Gambar garis deteksi di HP
+                for (const lm of res.multiHandLandmarks) {
+                    const isKepal = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
+                    if (isKepal && pending) {
+                        const url = URL.createObjectURL(new Blob([pending.file], {type: pending.type}));
+                        const box = document.getElementById('box');
+                        box.innerHTML = pending.type.startsWith('image') ? `<img src="${url}">` : `<video src="${url}" autoplay controls>`;
+                        document.getElementById('view').style.display = 'flex';
+                        pending = null;
+                        msg.innerText = "BERHASIL!";
+                    }
                 }
             }
         });
 
-        document.body.onclick = () => {
-            new Camera(document.getElementById('vid'), { onFrame: async () => { await hands.send({image: document.getElementById('vid')}); } }).start();
-            document.getElementById('msg').innerText = "Kamera Aktif & Menunggu...";
-        };
+        function mulai() {
+            document.getElementById('start-btn').style.display = 'none';
+            const cam = new Camera(v, { onFrame: async () => await hands.send({image: v}) });
+            cam.start();
+            msg.innerText = "Mencari Tangan...";
+        }
     </script>
 </body>
 </html>
