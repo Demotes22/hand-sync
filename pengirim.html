@@ -1,34 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pengirim Awal (Stabil)</title>
+    <title>Pengirim - Gesture Sync</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #111; color: white; text-align: center; font-family: sans-serif; }
-        video { transform: scaleX(-1); width: 640px; border-radius: 10px; margin-top: 20px; }
-        #log { color: #00ff00; font-weight: bold; margin: 15px; }
-        .panel { background: #222; padding: 20px; border-bottom: 2px solid #444; }
+        body { background: #111; color: white; text-align: center; font-family: sans-serif; margin: 0; }
+        .ui-top { padding: 15px; background: #222; border-bottom: 2px solid #444; }
+        #cam-container { position: relative; display: inline-block; margin-top: 15px; border: 3px solid #333; border-radius: 10px; overflow: hidden; }
+        video { transform: scaleX(-1); width: 600px; height: 450px; display: block; }
+        /* Garis Panduan Virtual */
+        .guide { position: absolute; top: 0; bottom: 0; width: 25%; display: flex; align-items: center; justify-content: center; font-weight: bold; opacity: 0.5; }
+        .genggam-area { right: 0; background: rgba(0, 255, 0, 0.1); border-left: 2px dashed green; }
+        .lepas-area { left: 0; background: rgba(255, 0, 0, 0.1); border-right: 2px dashed red; }
+        #log { color: #00ff00; font-size: 1.2em; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="panel">
-        <input type="text" id="targetId" placeholder="ID HP Penerima">
-        <button onclick="hubungkan()">HUBUNGKAN</button> | 
+    <div class="ui-top">
+        <input type="text" id="targetId" placeholder="Tempel ID HP di sini">
+        <button onclick="konekan()">HUBUNGKAN</button> | 
         <input type="file" id="fileInput">
-        <div id="log">Memulai Kamera...</div>
+        <div id="log">Status: Menunggu AI...</div>
     </div>
-    <video id="v" autoplay playsinline></video>
+
+    <div id="cam-container">
+        <video id="v" autoplay playsinline></video>
+        <div class="guide lepas-area">LEPAS DI SINI</div>
+        <div class="guide genggam-area">GENGGAM DI SINI</div>
+    </div>
 
     <script>
         const log = document.getElementById('log');
-        const v = document.getElementById('v');
         let peer = new Peer(), conn, isHolding = false;
 
-        function hubungkan() {
-            conn = peer.connect(document.getElementById('targetId').value);
-            conn.on('open', () => log.innerText = "TERHUBUNG! Siap Melempar.");
+        function konekan() {
+            const id = document.getElementById('targetId').value;
+            conn = peer.connect(id);
+            conn.on('open', () => log.innerText = "✅ TERHUBUNG! Pilih file lalu mulai.");
         }
 
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
@@ -37,32 +47,37 @@
         hands.onResults(res => {
             if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
                 const lm = res.multiHandLandmarks[0];
-                const isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
-                
-                // Genggam di kanan
-                if (isFist && lm[0].x > 0.7) {
+                const kepal = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
+                const x = lm[0].x; // 0 = kiri layar, 1 = kanan layar
+
+                // 1. Genggam di area kanan (x > 0.75)
+                if (kepal && x > 0.75) {
                     isHolding = true;
-                    log.innerText = "✊ FILE DIGENGGAM!";
+                    log.innerText = "✊ FILE TERGENGGAM!";
+                    log.style.color = "yellow";
                 }
-                
-                // Lepas di kiri
-                if (isHolding && isFist && lm[0].x < 0.3) {
-                    if (conn && conn.open && document.getElementById('fileInput').files[0]) {
-                        const file = document.getElementById('fileInput').files[0];
-                        conn.send({ 
-                            file: file, 
-                            name: file.name, 
-                            type: file.type 
-                        });
-                        log.innerText = "🚀 WOSHH! TERKIRIM!";
+
+                // 2. Lepas/Lempar di area kiri (x < 0.25)
+                if (isHolding && kepal && x < 0.25) {
+                    const fInput = document.getElementById('fileInput');
+                    if (conn && conn.open && fInput.files[0]) {
+                        const file = fInput.files[0];
+                        conn.send({ file: file, name: file.name, type: file.type });
+                        log.innerText = "🚀 WOSHHH! TERKIRIM!";
+                        log.style.color = "#00ff00";
                         isHolding = false;
+                    } else if (!fInput.files[0]) {
+                        log.innerText = "⚠️ Pilih file dulu!";
+                        log.style.color = "red";
                     }
                 }
-                if (!isFist) isHolding = false;
+                if (!kepal) isHolding = false;
             }
         });
 
-        new Camera(v, { onFrame: async () => await hands.send({image: v}) }).start();
+        new Camera(document.getElementById('v'), { 
+            onFrame: async () => await hands.send({image: document.getElementById('v')}) 
+        }).start();
     </script>
 </body>
 </html>
